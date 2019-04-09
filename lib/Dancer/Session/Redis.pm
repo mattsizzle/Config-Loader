@@ -1,4 +1,4 @@
-package Dancer::Session::Redis;
+package Dancer::Session::Redis::Simple;
 
 # ABSTRACT: Redis backend for Dancer Session Engine
 
@@ -15,6 +15,9 @@ use Carp ();
 
 my $_redis;
 my %options = ();
+
+# This hash will hold values from the session in memory for re-reads
+my %sessions;
 
 sub init {
     my $self = shift;
@@ -60,6 +63,8 @@ sub create {
 sub retrieve($$) {
     my ($class, $id) = @_;
 
+    return $sessions{$id} if $sessions{$id};
+
     my $self = $class->new;
     $self->redis->select($options{database});
     $self->redis->expire($id => $options{expire});
@@ -71,6 +76,8 @@ sub retrieve($$) {
 sub destroy {
     my ($self) = @_;
 
+    undef $sessions{$self->id};
+
     $self->redis->select($options{database});
     $self->redis->del($self->id);
 }
@@ -78,6 +85,8 @@ sub destroy {
 # flush session
 sub flush {
     my ($self) = @_;
+
+    $sessions{$self->id} = $self;
 
     $self->redis->select($options{database});
     $self->redis->set($self->id => Storable::freeze($self));
@@ -114,7 +123,7 @@ sub redis {
     Carp::croak "Unable connect to redis-server...";
 }
 
-1; # End of Dancer::Session::Redis
+1; # End of Dancer::Session::Redis::Simple
 
 __END__
 

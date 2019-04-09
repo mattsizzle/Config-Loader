@@ -2,7 +2,7 @@
 
 =head1 NAME
 
-Dancer::Session::Redis - Redis backend for Dancer Session Engine
+Dancer::Session::Redis::Simple - Redis backend for Dancer Session Engine with in memory hash for local reads
 
 =head1 VERSION
 
@@ -101,7 +101,7 @@ Deletes session information from the Redis database.
 =head1 BUGS
 
 Please report any bugs or feature requests through the web interface at
-L<https://github.com/Wu-Wu/Dancer-Session-Redis/issues>
+L<https://github.com/mgreen86/Dancer-Session-Redis/pulls>
 
 =head1 SEE ALSO
 
