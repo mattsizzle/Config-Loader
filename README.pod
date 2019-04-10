@@ -1,5 +1,12 @@
 =pod
 
+=head1 DISCLAIMER
+
+B<This version has been forked from the original version to provide an in memory hash for applications that distribute the
+session via Redis but want to be able to do quick successive reads of values without a round trip to the Redis server.>
+
+If you don't need this functionality please use the original L<https://github.com/Wu-Wu/Dancer-Session-Redis/>
+
 =head1 SYNOPSIS
 
     # in the Dancer config.yml:
@@ -26,9 +33,6 @@
 This module is a Redis backend for the session engine of Dancer application. This module is a descendant
 of L<Dancer::Session::Abstract>. A simple demo application might be found in the C<eg/> directory of this
 distribution.
-
-B<This version has been forked from the original version to provide an in memory hash for applications that distribute the
-session via Redis but want to be able to do quick successive reads of values without a round trip to the Redis server.>
 
 =head1 CONFIGURATION
 
