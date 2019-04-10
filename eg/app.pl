@@ -24,7 +24,7 @@ set redis_session => {
     expire   => 3600,
     debug    => 0,
 };
-set session       => 'Redis';
+set session       => 'Redis::Simple';
 set session_name  => 'eg_session_id'; # session's cookie name
 
 # route

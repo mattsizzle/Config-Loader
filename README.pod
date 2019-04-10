@@ -1,17 +1,9 @@
 =pod
 
-=head1 NAME
-
-Dancer::Session::Redis::Simple - Redis backend for Dancer Session Engine with in memory hash for local reads
-
-=head1 VERSION
-
-version 0.22
-
 =head1 SYNOPSIS
 
     # in the Dancer config.yml:
-    session: 'Redis'
+    session: 'Redis::Simple'
     redis_session:
         sock: '/var/run/redis.sock'
         password: 'QmG_kZECJAvAcDaWqqSqoNLUka5v3unMe_8sqYMh6ST'
@@ -27,13 +19,16 @@ version 0.22
         expire   => 3600,
         debug    => 0,
     };
-    setting session => 'Redis';
+    setting session => 'Redis::Simple';
 
 =head1 DESCRIPTION
 
 This module is a Redis backend for the session engine of Dancer application. This module is a descendant
-of L<Dancer::Session::Abstract>. A simple demo apllication might be found in the C<eg/> directory of this
+of L<Dancer::Session::Abstract>. A simple demo application might be found in the C<eg/> directory of this
 distribution.
+
+This version has been forked from the original version to provide an in memory hash for applications that distribute the
+session via Redis but want to be able to do quick successive reads of values without a round trip to the Redis server.
 
 =head1 CONFIGURATION
 
@@ -41,7 +36,7 @@ In order to use this session engine, you have to set up a few settings (in the a
 
 =head2 session
 
-Set the vaue B<Redis>. Required parameter.
+Set the value B<Redis>. Required parameter.
 
 =head2 redis_session
 
@@ -101,7 +96,7 @@ Deletes session information from the Redis database.
 =head1 BUGS
 
 Please report any bugs or feature requests through the web interface at
-L<https://github.com/mgreen86/Dancer-Session-Redis/pulls>
+L<https://github.com/mgreen86/Dancer-Session-Redis>
 
 =head1 SEE ALSO
 
@@ -109,20 +104,11 @@ L<Dancer>
 
 L<Dancer::Session>
 
+L<Dancer::Session::Redis>
+
 L<Storable>
 
 L<Redis>
 
 L<redis.io|http://redis.io>
-
-=head1 AUTHOR
-
-Anton Gerasimov <chim@cpan.org>
-
-=head1 COPYRIGHT AND LICENSE
-
-This software is copyright (c) 2012 by Anton Gerasimov.
-
-This is free software; you can redistribute it and/or modify it under
-the same terms as the Perl 5 programming language system itself.
 

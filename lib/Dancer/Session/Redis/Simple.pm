@@ -132,7 +132,7 @@ __END__
 =head1 SYNOPSIS
 
     # in the Dancer config.yml:
-    session: 'Redis'
+    session: 'Redis::Simple'
     redis_session:
         sock: '/var/run/redis.sock'
         password: 'QmG_kZECJAvAcDaWqqSqoNLUka5v3unMe_8sqYMh6ST'
@@ -148,7 +148,7 @@ __END__
         expire   => 3600,
         debug    => 0,
     };
-    setting session => 'Redis';
+    setting session => 'Redis::Simple';
 
 =head1 DESCRIPTION
 
@@ -222,13 +222,15 @@ Deletes session information from the Redis database.
 =head1 BUGS
 
 Please report any bugs or feature requests through the web interface at
-L<https://github.com/Wu-Wu/Dancer-Session-Redis/issues>
+L<https://github.com/mgreen86/Dancer-Session-Redis>
 
 =head1 SEE ALSO
 
 L<Dancer>
 
 L<Dancer::Session>
+
+L<Dancer::Session::Redis>
 
 L<Storable>
 
