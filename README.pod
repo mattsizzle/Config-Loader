@@ -1,118 +1,98 @@
-=pod
+=head1 NAME
 
-=head1 DISCLAIMER
-
-B<This version has been forked from the original version to provide an in memory hash for applications that distribute the
-session via Redis but want to be able to do quick successive reads of values without a round trip to the Redis server.>
-
-If you don't need this functionality please use the original L<https://github.com/Wu-Wu/Dancer-Session-Redis/>
+Config::Loader - load configuration data from various sources
 
 =head1 SYNOPSIS
 
-    # in the Dancer config.yml:
-    session: 'Redis::Simple'
-    redis_session:
-        sock: '/var/run/redis.sock'
-        password: 'QmG_kZECJAvAcDaWqqSqoNLUka5v3unMe_8sqYMh6ST'
-        database: 1
-        expire: 3600
-        debug: 0
+OOP USAGE
 
-    # or in the Dancer application:
-    setting redis_session => {
-        server   => 'redi.example.com:6379',
-        password => 'QmG_kZECJAvAcDaWqqSqoNLUka5v3unMe_8sqYMh6ST',
-        database => 1,
-        expire   => 3600,
-        debug    => 0,
-    };
-    setting session => 'Redis::Simple';
+   use Config::Loader();
+
+   my $config    = Config::Loader->new('/path/to/sources/config');
+
+   $hosts        = $config->{'hosts'};
+   @hosts        = $config->get('hosts');
+   $cloned_hosts = $config->clone()->{'hosts'};
+   -------------------------------------------------------
+
+ADVANCED USAGE
+
+   my $config    = Config::Loader->new(
+       file      => '/path/to/sources/config',
+       debug     => 1 | 0
+   );
 
 =head1 DESCRIPTION
 
-This module is a Redis backend for the session engine of Dancer application. This module is a descendant
-of L<Dancer::Session::Abstract>. A simple demo application might be found in the C<eg/> directory of this
-distribution.
+Config::Loader is a configuration module which has a few opinionated goals:
 
-=head1 CONFIGURATION
+=over
 
-In order to use this session engine, you have to set up a few settings (in the app or app's configuration file).
+=item * Flexible access
 
-=head2 session
+Provide a simple, easy to read, concise way of accessing the configuration
+values from various sources by allowing a consumer to provider their own
+interface to the configuration data.
 
-Set the value B<Redis>. Required parameter.
+=item * Minimal maintenance
 
-=head2 redis_session
+Specify the location of the configuration files only once per
+application, so that it requires minimal effort to relocate.
+See L</"USING Config::Loader">
 
-Settings for backend.
+=item * Easy to alter development environment
 
-=head3 server
+Provide a way for overriding configuration values on a development
+machine, so that differences between the dev environment and
+the live environment do not get copied over accidentally.
 
-Hostname and port of the redis-server instance which will be used to store session data. This one is B<required> unless I<sock> is defined.
+=back
 
-=head3 sock
+=head1 USING C<Config::Loader>
 
-unix socket path of the redis-server instance which will be used to store session data.
+C<Config::Loader> provides a OOP interface the will generate the configuration data when instantiated:
 
-=head3 password
+=over
 
-Password string for redis-server's AUTH command to processing any other commands. Optional. Check the redis-server
-manual for directive I<requirepass> if you would to use redis internal authentication.
+=item OOP STYLE
 
-=head3 database
+   use Config::Loader();
 
-Database # to store session data. Optional. Default value is 0.
+   my $config    = Config::Loader->new('/path/to/sources/config');
 
-=head3 expire
+   $hosts        = $config->{'hosts'};
+   @hosts        = $config->get('hosts');
+   $cloned_hosts = $config->clone()->{'hosts'};
 
-Session TTL. Optional. Default value is 900 (seconds).
+Also, see L</"ADVANCED USAGE">.
 
-=head3 debug
-
-Enables debug information to STDERR, including all interactions with the redis-server. Optional. Default value is 0.
+=back
 
 =head1 METHODS
 
-=head2 init
+=head3 C<new()>
 
-Validate settings and creates the initial connection to redis-server.
+    $conf = Config::Loader->new($config_file);
 
-=head2 redis
+new() instantiates a config object, loads the source configuration file and then requires each source's
+interface module and attempts to build the configuration object by merging the returned data from each
+interface modules ->load() method.
 
-Returns connection handle to the redis instance. Also establish new connection in case of C<dead> handle.
+=head2 _load_stream()
 
-=head2 create
+Reads the _config from self and parses the streams array for enabled streams. It then sorts the sources by priority
+and appends them to $self->{_streams}
 
-Creates a new object, runs C<flush> and returns the object.
+=head3 C<clone()>
 
-=head2 flush
+The data is deep cloned, using Storable, so the bigger the data, the more
+performance hit.  That said, Storable's dclone is very fast.
 
-Writes the session information to the Redis database.
+=head3 C<debug()>
 
-=head2 retrieve
+Writes additional contextual data to STDERR when C<debug> is set on instantiation.
 
-Retrieves session information from the Redis database.
+=head2 _load_stream()
 
-=head2 destroy
-
-Deletes session information from the Redis database.
-
-=head1 BUGS
-
-Please report any bugs or feature requests through the web interface at
-L<https://github.com/mgreen86/Dancer-Session-Redis>
-
-=head1 SEE ALSO
-
-L<Dancer>
-
-L<Dancer::Session>
-
-L<Dancer::Session::Redis>
-
-L<Storable>
-
-L<Redis>
-
-L<redis.io|http://redis.io>
+Loads a stream's interface module into @INC
 

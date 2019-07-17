@@ -1,0 +1,3 @@
+streams:
+  - { name: 'production', module: 'Test::StreamA', enabled: 1, priority: 4 }
+  - { name: 'production', module: 'Test::StreamB', enabled: 1, priority: 3 }

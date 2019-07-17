@@ -1,0 +1,496 @@
+package Config::Loader;
+
+use strict;
+use warnings;
+
+use Carp qw( croak );
+use Config::Merge;
+use Storable qw(!retrieve);
+use Hash::Merge qw( merge );
+
+# Package level allows for mod_perl?
+our %main_config;
+
+=head1 NAME
+
+Config::Loader - Perl extension for reading configuration data from any source (stream).
+
+=head1 VERSION
+
+Version 0.01
+
+=head1 DESCRIPTION
+
+This module allows defining and loading multiple sources (referred to as streams) to generate a configuration object.
+
+A modern application has various configuration options baked into it's various states. Whether you are in a production,
+development, or headless environment can change not only the configuration options your application has available but
+also where they are available from. Configs can be sourced by an application from more sources now then ever, whether it
+be local configuration files, Environmental variables, An in memory store, external database, 3rd party API, etc an
+application has to be able to locate and consume these resources in a sane way. This module serves to help with this
+problem. By providing a configurable builder for your application to use to retrieve configs tis module allows for you
+to define how I/O occurs with a source. This is referred to as a stream. Each stream also has a module that fulfills a
+simple interface needed by the builder to abstract the application. These modules are added to the applications INC path
+and are configurable via a central configuration file (see CONFIGURATION FILE). Additional multiple sources are supported
+with intelligent cascading of configurations. All this functionality allows the application developer to deal with
+configurations is an easier fashion.
+
+This module's interface attempts to replicate that of Config::Merge because I like the flexibility it provides.
+
+This module uses Perl data structures for representing your configuration. It can also assure,
+that you only work with a true copy of the data.
+
+=head1 CONFIGURATION FILE
+
+This module uses Config::Merge to load a configuration file of one of following types:
+YAML, JSON, XML, Perl, INI or Config::General.
+
+That configuration file will define streams ( end-points return data to a provider ), each of which will have at minimum
+an enabled flag ( whether this streams should be queried ) and a provider (the module located in the INC path that will
+query the end-point and return a flat hash representation of the configuration data ). Additional data can be added here
+that is made available via the __global__ property on a Config::Loader object. This scaffolding along with the builder
+pattern used in the module to support extending should cover a majority of "How do we load configs" concerns of your Perl
+application.
+
+An example application configuration with multiple sources available to the application:
+
+    streams:
+        redis:
+            - {
+                tag: 'REDIS',
+                provider: 'Config::Loader::Provider::Redis'
+                enabled: 1,
+                priority: 2,
+              }
+        local:
+            - {
+                tag: 'FileGlob',
+                provider: 'Config::Loader::Provider::LocalDir'
+                enabled: 1,
+                priority: 1
+              }
+        kubes:
+            - {
+                tag: 'HTTP',
+                provider: 'Config::Loader::Provider::Kubernetes'
+                enabled: 0,
+                priority: 10
+              }
+
+Given the above configuration the following would occur within the Config::Loader Factory:
+
+The global configuration file for the Config::Loader will be used as the initial hash that will be the returned
+by this method. It's values ALWAYS have precedent as the Hash::Merge operations are preformed with the following
+values defined:
+
+    Hash::Merge::set_behavior( 'LEFT_PRECEDENT' );
+    Hash::Merge::set_clone_behavior(0);
+
+Each additional enabled engine is queried via the provider class's retrieve function. With above example the redis and
+local engines will require the provider ( Config::Loader::Provider::* ) and call it's retrieve function returning the
+result to be merged further. The kubes engine will not be queried as it is flagged as disabled.
+
+Finally Hash::Merge will use the priority flags if defined to determine LEFT_PRECEDENT and merge each providers returned
+result set with the initial hash ( global configuration ) and stores it to $$self{__config__}
+
+The reasoning here is to create a single configurable portable factory that can load agnostic to any source provided as
+long as it returns a hash via the provider.
+
+tag is currently not used, but I want to experiment with stream delegation via tags so that multiple steams of the same
+type can be done in a hierarchical fashion.
+
+
+NOTE: This module proposes a flat hash for storing your configuration. It treats everything behind the first level of keys as
+a value.
+
+=head1 METHODS
+
+=head2 C<import()>
+
+C<import()> will normally be called automatically when you
+C<use Config::Loader>. However, you may want to do this:
+
+    use Config::Loader();
+    Config::Loader->import('My::Config' => '/path/to/config/dir');
+
+If called with two params: C<$config_class> and C<$config_dir>, it
+generates the new class (which inherits from Config::Loader)
+specified in C<$config_class>, creates a new
+object of that class and creates 4 subs:
+
+=over
+
+=item C<C()>
+
+    As a function:
+        C('keys...')
+
+    is the equivalent of:
+        $config->C('keys...');
+
+=item C<clone()>
+
+    As a function:
+        clone('keys...')
+
+    is the equivalent of:
+        $config->clone('keys...');
+
+=item C<object()>
+
+    $config = My::Config->object();
+
+Returns the C<$config> object,
+
+=item C<import()>
+
+When you use your generated config class, it exports the C<C()> sub into your
+package:
+
+    use My::Config;
+    $hosts = C('db.hosts.session');
+
+=back
+
+=cut
+
+sub import {
+    my $caller_class = shift;
+    my ( $class, $dir ) = @_;
+    return
+        unless defined $class;
+
+    unless ( defined $dir ) {
+        $dir   = $class;
+        $class = $caller_class;
+    }
+    if ( $class eq __PACKAGE__ ) {
+        die <<USAGE;
+
+USAGE : use $class ('Your::Config' => '/path/to/config/file' );
+
+USAGE
+
+    }
+
+    my $inc_path = $class;
+    $inc_path =~ s{::}{/}g;
+    $inc_path .= '.pm';
+
+    no strict 'refs';
+    unless ( exists $INC{$inc_path} ) {
+        @{ $class . '::ISA' } = ($caller_class);
+        $INC{$inc_path} = 'Auto-inflated by ' . $caller_class;
+    }
+
+    my $params = @_ % 2 ? shift() : {@_};
+    $params->{path} = $dir;
+    my $config = $class->new(%$params);
+
+    # Export C, clone to the subclass
+    *{ $class . "::C" }
+        = sub { my $c = ref $_[0] ? shift : $config; return C( $c, @_ ) };
+    *{ $class . "::clone" } = sub {
+        my $c = ref $_[0] ? shift : $config;
+        return clone( $c, @_ );
+    };
+    *{ $class . "::object" } = sub { return $config };
+
+    # Create a new import sub in the subclass
+    *{ $class . "::import" } = eval '
+        sub {
+            my $callpkg = caller(0);
+            no strict \'refs\';
+            *{$callpkg."::C"} = \&' . $class . '::C;
+        }';
+
+    return;
+}
+
+=head2 new
+
+Don't call new. There is no need to do so. Instead once imported use the retrieve method from the class.
+
+This is intentional as Config::Loader is just a simple builder.
+
+=cut
+
+sub new {
+    my $proto = shift;
+    my $class = ref $proto || $proto;
+
+    my $self = {};
+    bless( $self, $class );
+
+    my $params
+        = @_ > 1              ? {@_}
+        : ref $_[0] eq 'HASH' ? shift()
+        :                       { file => shift() };
+
+    # Emit debug messages
+    $self->{debug} = $params->{debug} ? 1 : 1; # TODO: Turn off unless requested
+
+    my $file = $params->{file}
+        or die( "Configuration file not specified when creating a new "
+        . "'$class' object" );
+
+    # Ensure config file is at minimum readable.
+    # We can't guarantee file-type support until it is run through Config::Merge
+    $self->debug("Checking configuration file '$file'");
+    $self->_check_file( $file );
+
+    $self->{__ConfFile__} = $file;
+    $self->load_config();
+
+    return $self;
+}
+
+=head2 C<load_config()>
+
+    $config->load_config();
+
+Will reload the config file specified at object creation (see L</"new()">).
+
+BEWARE : If you are using this in a mod_perl environment, you will lose the
+benefit of shared memory by calling this in a child process
+ - each child will have its own copy of the data.
+See L<MINIMISING MEMORY USE>.
+
+Returns the config hash ref.
+
+=cut
+
+#===================================
+sub load_config {
+    #===================================
+    my $self = shift;
+    $self->debug("Loading config data");
+    return {} #$self->{config} = $self->_load_configuration() || {};
+}
+
+=head2 C<debug()>
+
+    my $config = Config::Loader->new(
+        path        => '/path/to/config',
+        debug       => 1 | 0
+    );
+
+If C<debug> is true, then Config::Loader prints out an explanation of what it is doing on STDERR.
+
+=cut
+
+sub debug {
+    my $self = shift;
+    print STDERR ( join( "\n", @_, '' ) )
+        if $self->{debug};
+    return 1;
+}
+
+=head3 retrieve
+
+Returns the whole configuration as a Config::Loader::Config blessed hash.
+
+=cut
+
+sub retrieve {
+    my $class  = shift;
+    my $params = shift;
+
+    croak "Config::Loader ERROR: No parameter hash given to retrieve"
+        unless ( defined $params and ref( $params ) eq 'HASH' );
+
+    # Die if we aren't given an instance
+    croak "Config::Loader ERROR: No engine given to retrieve()"
+        unless ( $params->{ engine } || $params->{ key } );
+
+    my $self = Config::Loader->new;
+    my $config_file = ( $params->{ config_file } || './Config::Loader' );
+
+    # Retrieve the actual configuration
+    $self->_load_configuration(
+        $params->{ engine },
+        $config_file,
+        $params->{ reload_config },
+    );
+
+    if ( $params->{ key } ) {
+
+    }
+
+    # Return our configuration
+    return( $$self{__config__} );
+
+}
+
+=head3 clone
+
+Returns a clone of the Config object using Storable's dclone method.
+
+=cut
+
+sub clone {
+    my $self = shift;
+    my $data = $$self{__config__};
+    return Storable::dclone($data);
+}
+
+=head3 _check_file
+
+Helper method to ensure a requested file can be retrieved and read properly as Config::Merge doesnt
+provide much useful information when it attempts to import a non-existence non-readable file.
+
+=cut
+
+sub _check_file {
+    my $self        =   shift;
+    my $file        =   shift;
+
+    # Check for existence
+    if( ! -e $file ) {
+        croak "Config::Loader ERROR - Configuration file '$file' does not exist";
+    }
+
+    # Check for readability
+    if( ! -r $file ) {
+        croak "Config::Loader ERROR - Unable to read configuration file '$file' ".
+            "check the permissions";
+    }
+
+    return 1;
+}
+
+=head3 _load_configuration
+
+Helper method to load the applications configuration from a valid engine that is defined in the passed configuration
+file.
+
+
+
+=cut
+
+sub _load_configuration {
+    my $self            =   shift;
+
+    my $params
+        = @_ > 1              ? {@_}
+        : ref $_[0] eq 'HASH' ? shift()
+        :                       { file => shift() };
+
+    croak "Config::Loader ERROR: invalid arguments supplied to _load_configuration"
+        unless ( defined $params and ref( $params ) eq 'HASH' );
+
+    my $file =  $params->{file} // $self->{__ConfFile__};
+    my $reload_config =  $params->{reload_config} // 0;
+    my $engine =  $params->{engine};
+
+    # Make sure our file is there and readable
+    $self->_check_file( $file );
+
+    # Retrieve the config if it has not already been loaded
+    # or if a config reload is being forced.
+    if ( (! %main_config) or $reload_config ) {
+        my $cfg;
+        eval {
+            $cfg = Config::Merge->new($file);
+        };
+
+        if ( $@ || not defined $cfg ) {
+            croak "Config::Loader ERROR: Unable to find '$file'";
+        };
+
+        %main_config = $cfg;
+    }
+
+    # Example engine definition that will be pulled from $main_config{'engines'}{$engine}
+    # - {
+    #     type: 'HTTP',
+    #         provider: 'Config::Loader::Provider::Kubernetes'
+    #     enabled: 0,
+    #         priority: 10
+    # }
+    # If we get a specific engine
+    # TODO: Cache here so we don't have to do this each time.
+    my $engine_ref;
+    if ( defined $engine ) {
+        # Look for the instance
+        if( !$main_config{'engines'}{$engine} ) {
+            croak "Config::Loader ERROR: Unable to find '$engine' in configuration file '$file'";
+        }
+
+        if( !$main_config{'engines'}{$engine}{enabled} ) {
+            croak "Config::Loader ERROR: '$engine' not enabled in configuration file '$file'";
+        }
+
+        # Store this to reduce hash lookups. If you create the Config::Loader instance with this defined we want to only
+        # use this source for future lookups.
+        $engine_ref = $main_config{'engines'}{$engine};
+    } else {
+        # If you don't want to explicitly say what engine to use I got you. Don't want to change up after instance is created
+        $engine_ref = map { $_->{enabled} == 1 } %{ $main_config{'engines'} };
+    }
+
+
+
+
+
+
+
+
+
+    # Handle all ConfigVia statements
+    my $configure_via = $$engine_ref{ConfigureVia};
+
+    my @config_statements;
+
+    if ( ref( $configure_via ) =~ /ARRAY/ ) {
+        @config_statements = @{ $configure_via };
+    }
+    elsif ( not defined $configure_via ) {
+        push @config_statements, 'Default';
+    }
+    else {
+        push @config_statements, $configure_via;
+    }
+
+    foreach my $config ( @config_statements ) {
+        my ( $method_name, @params ) = split /\s+/, $config;
+        my $method                   = $dispatch{ $method_name };
+
+        croak "Config::Loader ERROR: No such ConfigureVia method: $method_name\n"
+            unless $method;
+
+        $self->$method( $engine, $engine_ref, @params );
+    }
+
+    Hash::Merge::set_behavior( 'LEFT_PRECEDENT' );
+    Hash::Merge::set_clone_behavior(0);
+
+    # Merge in our global configs if we have any
+    if( $main_config{'global'} ) {
+        $$self{__global__} = $main_config{'global'};
+
+        $$self{__config__} = merge( $$self{__config__}, $$self{__global__} );
+
+    }
+
+    # Merge in any shared configs if any
+    my $shares = $$engine_ref{'use'};
+    if( $shares and !ref($shares) ) {
+
+        $$self{__config__}
+            = merge( $$self{__config__}, $main_config{'shared'}{$shares} );
+
+    }
+    elsif( $shares and ref($shares) eq 'ARRAY' ) {
+        foreach my $s ( @{ $shares } ) {
+
+            $$self{__config__} = merge( $$self{__config__},
+                $main_config{'shared'}{$s} );
+
+        }
+    }
+}
+
+1;
+
+__END__
